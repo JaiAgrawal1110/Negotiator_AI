@@ -1,0 +1,16 @@
+gymnasium
+stable-baselines3
+numpy
+wandb
+groq
+langchain
+tiktoken
+transformers
+datasets
+scikit-learn
+torch
+chromadb
+fastapi
+uvicorn
+pydantic
+python-dotenv
