@@ -62,10 +62,29 @@ ACTIONS = [
 
 def calculate_reward(final_deal, target, floor, market_rate, relationship_score):
     """
-    Ported directly from the blueprint (section 05).
-    final_deal == None is treated as a no-deal / walked-away outcome,
-    scored the same as a deal below the floor.
+    Tuned version of the blueprint's reward function (section 05).
+
+    TUNING NOTE (Week 3-4): the original version scored the floor-to-target
+    range LINEARLY. First training run showed the agent exploiting this —
+    it learned to reliably bank "safe," mediocre deals around the middle of
+    the range instead of pushing for target, because a 50%-of-the-way deal
+    scored a proportionally decent 4/8 with much lower risk than gambling
+    on reaching target. Result: avg reward went up but win rate (deals at
+    or above target) and avg deal value both got WORSE vs. a random
+    baseline — a form of reward under-shooting, not the "agent finds an
+    exploit" kind of reward hacking, but the same underlying problem: the
+    reward landscape didn't actually match the business goal.
+
+    Fix: make the floor-to-target curve CONVEX (quadratic) instead of
+    linear, so middling deals are penalized much more relative to deals
+    close to target. This removes the "good enough" plateau the agent was
+    settling into and makes pushing closer to target clearly worth the
+    risk. A small SETTLE_PENALTY is also subtracted on any below-target
+    outcome so the agent isn't indifferent between "barely above floor"
+    and "doing nothing."
     """
+    SETTLE_PENALTY = 1.5
+
     if final_deal is None:
         return -10.0
 
@@ -75,13 +94,16 @@ def calculate_reward(final_deal, target, floor, market_rate, relationship_score)
     if final_deal >= target:
         return 10.0
 
-    base = (final_deal - floor) / (target - floor) * 8
+    x = (final_deal - floor) / (target - floor)  # in (0, 1)
+    base = (x ** 2) * 8  # convex: punishes mid-range deals much more than linear did
 
     if final_deal > market_rate:
         base += 2
 
     if relationship_score < 0.3:
         base -= 3
+
+    base -= SETTLE_PENALTY
 
     return round(base, 2)
 
