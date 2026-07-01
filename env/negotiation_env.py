@@ -326,6 +326,24 @@ class NegotiationEnv(gym.Env):
 
         return self.current_offer, False, False, 0.0
 
+    def update_sentiment(self, score: float) -> None:
+        """
+        Wire a real sentiment score (0-1) into the state vector, replacing
+        the 0.5 placeholder. Call this after running the client's latest
+        message through nlp.sentiment.ToneClassifier.sentiment_score_for_state_vector()
+        each turn, BEFORE the next step()/observation is read.
+
+        Kept as a separate setter (rather than auto-computed inside step())
+        because the env itself has no text/dialogue -- it only sees numbers.
+        Real text only exists in the LLM-driven dialogue layer
+        (llm/simulator.py for sim, or the live API in Week 11-12), so the
+        sentiment score has to be computed there and pushed in here.
+
+        Week 5-6: wires the NLP sentiment layer into the RL observation
+        space, replacing the static 0.5 placeholder used during Week 1-2/3-4.
+        """
+        self.sentiment_score = float(max(0.0, min(1.0, score)))
+
     def _get_obs(self) -> np.ndarray:
         price_position = float(np.clip(
             (self.current_offer - self.floor) / max(self.target - self.floor, 1e-6),
