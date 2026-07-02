@@ -22,7 +22,7 @@ from dotenv import load_dotenv
 load_dotenv()
 from llm.script_generator import ScriptGenerator, DealContext
 
-USE_TRAINED_AGENT = True  # flip to True once you've trained a policy via agent/train.py
+USE_TRAINED_AGENT = False  # flip to True once you've trained a policy via agent/train.py
 MODEL_PATH = "agent/policy/ppo_negotiation.zip"  # matches train.py's POLICY_PATH exactly
 
 # env/negotiation_env.py uses lowercase snake_case archetype keys internally
@@ -35,6 +35,33 @@ ARCHETYPE_DISPLAY_NAMES = {
     "deadline_rusher": "Deadline Rusher",
     "scope_creeper": "Scope Creeper",
 }
+
+
+MARKET_CHUNKS_PATH = "data/market_rag_chunks.csv"
+_market_chunks_cache = None  # loaded once, lazily, not per-episode
+
+
+def _sample_project_description(category: str) -> str:
+    """Pulls a real project description for the given category from the
+    240 chunks generated in Week 9-10 Step 3 (generate_market_chunks.py).
+    Falls back to a generic label if that file doesn't exist yet, rather
+    than crashing the whole demo over a missing optional file."""
+    global _market_chunks_cache
+    if _market_chunks_cache is None:
+        try:
+            import pandas as pd
+            _market_chunks_cache = pd.read_csv(MARKET_CHUNKS_PATH)
+        except FileNotFoundError:
+            _market_chunks_cache = False  # sentinel: tried and failed, don't retry
+
+    if _market_chunks_cache is False:
+        return f"a {category.lower()} project"
+
+    matches = _market_chunks_cache[_market_chunks_cache["job_category"] == category]
+    if matches.empty:
+        return f"a {category.lower()} project"
+
+    return matches.sample(1).iloc[0]["project_description"]
 
 
 def _sentiment_label(sentiment_score: float) -> str:
@@ -88,8 +115,17 @@ def run_full_pipeline_demo(archetype: str = None, max_turns: int = 8):
     reset_options = {"archetype": archetype} if archetype else {}
     obs, info = env.reset(options=reset_options)
 
+    # Sample ONE real project description matching this episode's actual
+    # category (from the 240 chunks generated in Week 9-10 Step 3), reused
+    # for the whole episode -- the project doesn't change mid-negotiation,
+    # so re-sampling every turn would be wrong. This replaces the old
+    # generic "a freelance project" placeholder, which gave the market
+    # retriever nothing real to match against.
+    project_description = _sample_project_description(info["project_category"])
+
     print(f"=== New negotiation | Archetype: {ARCHETYPE_DISPLAY_NAMES.get(info['archetype'], info['archetype'])} "
-          f"| Floor: ${info['floor']:g} | Target: ${info['target']:g} ===\n")
+          f"| Category: {info['project_category']} | Floor: ${info['floor']:g} | Target: ${info['target']:g} ===")
+    print(f"Project: {project_description}\n")
 
     prev_offer = info["current_offer"]
     done = False
@@ -107,7 +143,7 @@ def run_full_pipeline_demo(archetype: str = None, max_turns: int = 8):
             archetype=ARCHETYPE_DISPLAY_NAMES.get(info["archetype"], info["archetype"]),
             client_last_message=_describe_client_offer(info["current_offer"], prev_offer),
             detected_sentiment=_sentiment_label(float(obs[12])),  # index 12 = sentiment_score
-            project_description="a freelance project",
+            project_description=project_description,
             extra_notes=f"Turn {info['turn'] + 1} of {max_turns}. "
                         f"Relationship score: {info['relationship_score']}.",
         )

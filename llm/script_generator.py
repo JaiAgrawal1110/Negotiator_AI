@@ -26,6 +26,7 @@ from typing import Optional
 from groq import Groq
 
 from llm.action_templates import get_strategy
+from llm.market_retriever import MarketRateRetriever
 
 GROQ_MODEL = "llama-3.3-70b-versatile"
 
@@ -82,9 +83,26 @@ class DealContext:
 class ScriptGenerator:
     """Wraps Groq to turn (action_id, DealContext) into freelancer reply scripts."""
 
-    def __init__(self, api_key: Optional[str] = None, model: str = GROQ_MODEL):
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        model: str = GROQ_MODEL,
+        use_market_context: bool = True,
+    ):
         self.client = Groq(api_key=api_key or os.environ.get("GROQ_API_KEY"))
         self.model = model
+
+        # Market retrieval is a nice-to-have, not a hard dependency -- if
+        # the vector store hasn't been built yet (scripts/build_vector_store.py
+        # not run), fall back to generating without market grounding rather
+        # than crashing the whole script generator over it.
+        self.retriever = None
+        if use_market_context:
+            try:
+                self.retriever = MarketRateRetriever()
+            except Exception as e:
+                print(f"⚠️  Market retriever unavailable ({e}). "
+                      f"Continuing without market-rate grounding.")
 
     def _suggest_anchor_number(self, action_id: int, ctx: DealContext) -> Optional[float]:
         """Computes the actual number the script should state, where the
@@ -112,6 +130,23 @@ class ScriptGenerator:
         # already working correctly in testing, no override needed.
         return None
 
+    def _get_market_context(self, ctx: DealContext) -> Optional[dict]:
+        """Retrieves real market-rate data semantically matched to this
+        project, for use as grounding evidence in the script (e.g. "market
+        rate for this kind of work is $44-$56/hr"). This never overrides
+        freelancer_floor/target or the deterministic suggested_number --
+        those are the freelancer's own negotiation boundaries, decided by
+        the RL policy and env, not by what the market happens to average.
+        Retrieval only makes the LLM's justification credible instead of
+        invented ("industry standards" with nothing behind it)."""
+        if self.retriever is None:
+            return None
+        try:
+            return self.retriever.get_market_context(ctx.project_description, k=5)
+        except Exception as e:
+            print(f"⚠️  Market retrieval failed for this turn ({e}). Continuing without it.")
+            return None
+
     # ------------------------------------------------------------------
     # Prompt construction
     # ------------------------------------------------------------------
@@ -135,6 +170,20 @@ class ScriptGenerator:
             "has already been decided for you.\n"
             "- If there is no 'suggested_number' field, do not invent a new price "
             "at all — reference client_current_offer only if needed.\n"
+            "- freelancer_floor and freelancer_target are given to you for your OWN "
+            "awareness of the negotiation's boundaries — they are NEVER numbers to "
+            "state directly as 'my price' or 'my rate'. The only number you may "
+            "ever say out loud is suggested_number (when present) or "
+            "client_current_offer (when referencing their offer back to them). "
+            "Stating freelancer_target verbatim as your ask is a violation even if "
+            "it happens to equal a number that sounds reasonable in context.\n"
+            "- If deal_context includes 'retrieved_market_data', you may reference "
+            "it in your justification (e.g. 'that's in line with market rate for "
+            "similar backend API work') to make your reasoning more credible. "
+            "This is supporting evidence only — it does NOT change what number you "
+            "state. The number you state is still governed entirely by the "
+            "'suggested_number'/'client_current_offer' rules above, even if "
+            "retrieved_market_data's range differs from that number.\n"
             "- Never invent deadlines, urgency, or framing (e.g. 'high-priority') "
             "that isn't present in deal_context.\n"
             "- Match the tone guidance exactly — it is calibrated per strategy.\n"
@@ -163,6 +212,21 @@ class ScriptGenerator:
         }
         if suggested_number is not None:
             deal_context["suggested_number"] = f"{ctx.currency}{suggested_number:g}"
+
+        market_context = self._get_market_context(ctx)
+        if market_context is not None:
+            deal_context["retrieved_market_data"] = {
+                "note": "Real freelancer rate data for similar work, for "
+                        "justification/credibility only -- NOT the number "
+                        "to state (use suggested_number or "
+                        "client_current_offer for that, per the rules above).",
+                "typical_rate_range": (
+                    f"{ctx.currency}{market_context['suggested_range'][0]:g}"
+                    f"-{ctx.currency}{market_context['suggested_range'][1]:g}/hr"
+                ),
+                "closest_comparable_project": market_context["closest_match"],
+                "category": market_context["closest_category"],
+            }
 
         return json.dumps({
             "instruction": (

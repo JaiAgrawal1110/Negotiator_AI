@@ -50,6 +50,25 @@ ARCHETYPE_LIST = [
     "scope_creeper",
 ]
 
+# Same 8 categories as the real Kaggle market-rate dataset (Week 9-10),
+# so every episode's project_category lines up with something the market
+# retriever actually has data for. Kept as a plain constant (not read from
+# a CSV) so reset() stays a cheap, I/O-free operation -- this env still
+# needs to run thousands of episodes fast for RL training, per the module
+# docstring's design philosophy. Only a category LABEL is assigned here;
+# turning that into an actual project description (for retrieval) happens
+# one layer up, in scripts/demo_negotiation.py, not inside the env itself.
+PROJECT_CATEGORIES = [
+    "App Development",
+    "Content Writing",
+    "Customer Support",
+    "Data Entry",
+    "Digital Marketing",
+    "Graphic Design",
+    "SEO",
+    "Web Development",
+]
+
 ACTIONS = [
     "hold_and_reframe",
     "re_anchor_higher",
@@ -134,6 +153,7 @@ class NegotiationEnv(gym.Env):
 
         # Episode state, set in reset()
         self.archetype = None
+        self.project_category = None
         self.target = None
         self.floor = None
         self.market_rate = None
@@ -160,6 +180,9 @@ class NegotiationEnv(gym.Env):
 
         self.archetype = options.get(
             "archetype", self._rng.choice(ARCHETYPE_LIST)
+        )
+        self.project_category = options.get(
+            "project_category", self._rng.choice(PROJECT_CATEGORIES)
         )
 
         # Sample a realistic deal context. floor < market_rate <= target.
@@ -372,6 +395,7 @@ class NegotiationEnv(gym.Env):
     def _get_info(self) -> dict:
         return {
             "archetype": self.archetype,
+            "project_category": self.project_category,
             "turn": self.turns_taken,
             "current_offer": round(self.current_offer, 2),
             "target": round(self.target, 2),
