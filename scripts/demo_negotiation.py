@@ -22,7 +22,7 @@ from dotenv import load_dotenv
 load_dotenv()
 from llm.script_generator import ScriptGenerator, DealContext
 
-USE_TRAINED_AGENT = False  # flip to True once you've trained a policy via agent/train.py
+USE_TRAINED_AGENT = True  # flip to True once you've trained a policy via agent/train.py
 MODEL_PATH = "agent/policy/ppo_negotiation.zip"  # matches train.py's POLICY_PATH exactly
 
 # env/negotiation_env.py uses lowercase snake_case archetype keys internally
@@ -90,7 +90,7 @@ def _describe_client_offer(current_offer: float, previous_offer: float) -> str:
     return f"Client {direction} ${current_offer:g} (was ${previous_offer:g})."
 
 
-def run_full_pipeline_demo(archetype: str = None, max_turns: int = 8):
+def run_full_pipeline_demo(archetype: str = None, max_turns: int = 8, client_id: str = "demo_client_001"):
     """Loads the trained PPO agent, lets it pick action_id at each turn of
     a real episode, and calls the script generator on each one — the actual
     "agent plays a negotiation and writes its own messages" milestone.
@@ -98,9 +98,15 @@ def run_full_pipeline_demo(archetype: str = None, max_turns: int = 8):
     archetype: one of ARCHETYPE_DISPLAY_NAMES' keys (e.g. "lowballer"), or
                None to let the env sample one at random like it does during
                training.
+    client_id: identifies this client for memory lookup/storage. Real client
+               IDs will come from the API layer in Week 11-12; for now this
+               is just a string you supply, defaulting to a fixed demo ID so
+               repeated runs build up history against the same "client" and
+               you can see the memory summary grow across runs.
     """
     from stable_baselines3 import PPO
     from env.negotiation_env import NegotiationEnv, ACTIONS
+    from memory.negotiation_memory import NegotiationMemory
 
     if not os.path.exists(MODEL_PATH):
         raise FileNotFoundError(
@@ -110,6 +116,7 @@ def run_full_pipeline_demo(archetype: str = None, max_turns: int = 8):
 
     model = PPO.load(MODEL_PATH)
     generator = ScriptGenerator()
+    memory = NegotiationMemory()
 
     env = NegotiationEnv(max_turns=max_turns)
     reset_options = {"archetype": archetype} if archetype else {}
@@ -123,9 +130,29 @@ def run_full_pipeline_demo(archetype: str = None, max_turns: int = 8):
     # retriever nothing real to match against.
     project_description = _sample_project_description(info["project_category"])
 
-    print(f"=== New negotiation | Archetype: {ARCHETYPE_DISPLAY_NAMES.get(info['archetype'], info['archetype'])} "
+    # Look up this client's history ONCE at the start of the episode --
+    # same reasoning as project_description, it doesn't change mid-negotiation.
+    client_summary = memory.get_client_summary(client_id)
+    client_history_dict = None
+    if client_summary is not None:
+        client_history_dict = {
+            "past_negotiation_count": client_summary.past_negotiation_count,
+            "deals_closed": client_summary.deals_closed,
+            "deals_lost": client_summary.deals_lost,
+            "avg_pct_of_target_on_closed_deals": client_summary.avg_pct_of_target,
+            "last_outcome": client_summary.last_outcome,
+        }
+
+    print(f"=== New negotiation | Client: {client_id} | "
+          f"Archetype: {ARCHETYPE_DISPLAY_NAMES.get(info['archetype'], info['archetype'])} "
           f"| Category: {info['project_category']} | Floor: ${info['floor']:g} | Target: ${info['target']:g} ===")
-    print(f"Project: {project_description}\n")
+    print(f"Project: {project_description}")
+    if client_summary is not None:
+        print(f"Client history: {client_summary.past_negotiation_count} past negotiation(s), "
+              f"{client_summary.deals_closed} closed, last outcome: {client_summary.last_outcome}")
+    else:
+        print("Client history: none (new client)")
+    print()
 
     prev_offer = info["current_offer"]
     done = False
@@ -146,6 +173,7 @@ def run_full_pipeline_demo(archetype: str = None, max_turns: int = 8):
             project_description=project_description,
             extra_notes=f"Turn {info['turn'] + 1} of {max_turns}. "
                         f"Relationship score: {info['relationship_score']}.",
+            client_history=client_history_dict,
         )
 
         script = generator.generate_single(action_id, ctx)
@@ -164,6 +192,20 @@ def run_full_pipeline_demo(archetype: str = None, max_turns: int = 8):
     else:
         print("No deal reached — negotiation ended without agreement.")
     print(f"Final episode reward: {reward}")
+
+    # Save this episode to memory so future negotiations with this client
+    # (or a re-run of this demo) have real history to look up.
+    memory.save_episode(
+        client_id=client_id,
+        archetype=info["archetype"],
+        floor=info["floor"],
+        target=info["target"],
+        final_deal=final_deal,
+        turns_taken=info["turn"],
+        project_category=info["project_category"],
+        reward=reward,
+    )
+    print(f"Saved episode to memory for client '{client_id}'.")
 
 
 def run_standalone_demo():

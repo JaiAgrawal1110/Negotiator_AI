@@ -78,6 +78,8 @@ class DealContext:
     project_description: str = "a freelance project"
     currency: str = "$"
     extra_notes: str = field(default_factory=str)  # e.g. "3rd counter-offer this thread"
+    client_history: Optional[dict] = None  # from memory/negotiation_memory.py,
+                                            # None for a new client with no history
 
 
 class ScriptGenerator:
@@ -184,6 +186,14 @@ class ScriptGenerator:
             "state. The number you state is still governed entirely by the "
             "'suggested_number'/'client_current_offer' rules above, even if "
             "retrieved_market_data's range differs from that number.\n"
+            "- If deal_context includes 'client_history', you're negotiating with a "
+            "REPEAT client -- you may let that inform your tone/confidence (e.g. "
+            "slightly warmer if they've closed deals fairly before, more firm "
+            "upfront if they've previously failed to close or lowballed "
+            "repeatedly), but do not fabricate specific past quotes, dates, or "
+            "conversations that aren't in the given history. If client_history "
+            "is absent, treat this as a new client -- don't imply any prior "
+            "relationship.\n"
             "- Never invent deadlines, urgency, or framing (e.g. 'high-priority') "
             "that isn't present in deal_context.\n"
             "- Match the tone guidance exactly — it is calibrated per strategy.\n"
@@ -227,6 +237,9 @@ class ScriptGenerator:
                 "closest_comparable_project": market_context["closest_match"],
                 "category": market_context["closest_category"],
             }
+
+        if ctx.client_history is not None:
+            deal_context["client_history"] = ctx.client_history
 
         return json.dumps({
             "instruction": (
