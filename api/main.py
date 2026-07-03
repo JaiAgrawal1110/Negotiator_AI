@@ -151,6 +151,7 @@ class SessionState:
     project_description: str
     project_category: Optional[str]
     max_turns: int
+    currency: str = "$"
     turn: int = 0
     relationship_score: float = 0.7
     leverage_score: float = 0.5
@@ -240,6 +241,9 @@ class StartRequest(BaseModel):
     max_turns: int = 8
     leverage_score: float = 0.5
     deadline_urgency: float = 0.5
+    currency: str = Field(
+        "$", description="Currency symbol for amounts in scripts and the UI, e.g. '$' or '₹'."
+    )
 
 
 class StartResponse(BaseModel):
@@ -288,6 +292,7 @@ def _state_dict(session: SessionState) -> dict:
         "target": session.target,
         "relationship_score": round(session.relationship_score, 2),
         "archetype": ARCHETYPE_DISPLAY_NAMES.get(session.archetype, session.archetype),
+        "currency": session.currency,
         "done": session.done,
     }
 
@@ -317,6 +322,7 @@ def start_negotiation(req: StartRequest):
         max_turns=req.max_turns,
         leverage_score=req.leverage_score,
         deadline_urgency=req.deadline_urgency,
+        currency=req.currency,
         prev_offer=req.current_offer,
     )
     SESSIONS[session_id] = session
@@ -375,6 +381,7 @@ def step_negotiation(session_id: str, req: StepRequest):
         client_last_message=req.client_message,
         detected_sentiment=detected_sentiment,
         project_description=session.project_description,
+        currency=session.currency,
         extra_notes=f"Turn {session.turn} of {session.max_turns}. "
                     f"Relationship score: {round(session.relationship_score, 2)}.",
         client_history=_client_history_dict(session.client_id),

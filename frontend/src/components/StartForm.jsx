@@ -8,9 +8,15 @@ const ARCHETYPES = [
   { value: "scope_creeper", label: "Scope Creeper" },
 ];
 
+const CURRENCIES = [
+  { value: "$", label: "USD ($)" },
+  { value: "₹", label: "INR (₹)" },
+];
+
 const initial = {
   client_id: "",
   archetype: "lowballer",
+  currency: "$",
   floor: "",
   target: "",
   current_offer: "",
@@ -31,6 +37,7 @@ export default function StartForm({ onStart, loading, error }) {
     onStart({
       client_id: form.client_id.trim(),
       archetype: form.archetype,
+      currency: form.currency,
       floor: Number(form.floor),
       target: Number(form.target),
       current_offer: Number(form.current_offer),
@@ -83,43 +90,14 @@ export default function StartForm({ onStart, loading, error }) {
 
       <div className="field-row">
         <div className="field">
-          <label htmlFor="floor">Your floor ($)</label>
-          <input
-            id="floor"
-            type="number"
-            min="0"
-            placeholder="1800"
-            value={form.floor}
-            onChange={set("floor")}
-            required
-          />
-        </div>
-        <div className="field">
-          <label htmlFor="target">Your target ($)</label>
-          <input
-            id="target"
-            type="number"
-            min="0"
-            placeholder="2500"
-            value={form.target}
-            onChange={set("target")}
-            required
-          />
-        </div>
-      </div>
-
-      <div className="field-row">
-        <div className="field">
-          <label htmlFor="current_offer">Client's opening offer ($)</label>
-          <input
-            id="current_offer"
-            type="number"
-            min="0"
-            placeholder="1200"
-            value={form.current_offer}
-            onChange={set("current_offer")}
-            required
-          />
+          <label htmlFor="currency">Currency</label>
+          <select id="currency" value={form.currency} onChange={set("currency")}>
+            {CURRENCIES.map((c) => (
+              <option key={c.value} value={c.value}>
+                {c.label}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="field">
           <label htmlFor="max_turns">Max turns</label>
@@ -132,6 +110,46 @@ export default function StartForm({ onStart, loading, error }) {
             onChange={set("max_turns")}
           />
         </div>
+      </div>
+
+      <div className="field-row">
+        <div className="field">
+          <label htmlFor="floor">Your floor ({form.currency})</label>
+          <input
+            id="floor"
+            type="number"
+            min="0"
+            placeholder="1800"
+            value={form.floor}
+            onChange={set("floor")}
+            required
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="target">Your target ({form.currency})</label>
+          <input
+            id="target"
+            type="number"
+            min="0"
+            placeholder="2500"
+            value={form.target}
+            onChange={set("target")}
+            required
+          />
+        </div>
+      </div>
+
+      <div className="field">
+        <label htmlFor="current_offer">Client's opening offer ({form.currency})</label>
+        <input
+          id="current_offer"
+          type="number"
+          min="0"
+          placeholder="1200"
+          value={form.current_offer}
+          onChange={set("current_offer")}
+          required
+        />
       </div>
 
       <div className="field">

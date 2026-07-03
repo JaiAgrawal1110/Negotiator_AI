@@ -1,9 +1,12 @@
 import { useState } from "react";
 import DealGauge from "./DealGauge.jsx";
 
-function fmtMoney(n) {
+const LOCALE_BY_SYMBOL = { "$": "en-US", "₹": "en-IN" };
+
+function fmtMoney(n, symbol = "$") {
   if (n === null || n === undefined) return "—";
-  return `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  const locale = LOCALE_BY_SYMBOL[symbol] || "en-US";
+  return `${symbol}${Number(n).toLocaleString(locale, { maximumFractionDigits: 0 })}`;
 }
 
 function ActionLabel(name) {
@@ -73,7 +76,12 @@ export default function SessionView({
           </div>
         </div>
 
-        <DealGauge floor={state.floor} target={state.target} currentOffer={state.current_offer} />
+        <DealGauge
+          floor={state.floor}
+          target={state.target}
+          currentOffer={state.current_offer}
+          currency={state.currency}
+        />
 
         {clientHistory ? (
           <div className="history-strip" style={{ marginTop: 20 }}>
@@ -116,7 +124,9 @@ export default function SessionView({
           <div className="turn" key={t.turnNumber}>
             <div className="turn-number">TURN {t.turnNumber}</div>
             <div className="bubble bubble-client">
-              <div className="bubble-who">Client{t.clientOffer != null ? ` · ${fmtMoney(t.clientOffer)}` : ""}</div>
+              <div className="bubble-who">
+                Client{t.clientOffer != null ? ` · ${fmtMoney(t.clientOffer, state.currency)}` : ""}
+              </div>
               {t.clientMessage}
             </div>
             <div className="bubble bubble-agent">
@@ -155,7 +165,7 @@ export default function SessionView({
             </div>
             <div className="field-row">
               <div className="field">
-                <label htmlFor="client_offer">New offer, if any ($)</label>
+                <label htmlFor="client_offer">New offer, if any ({state.currency})</label>
                 <input
                   id="client_offer"
                   type="number"
@@ -190,7 +200,9 @@ export default function SessionView({
             ) : (
               <form onSubmit={submitEnd}>
                 <div className="field">
-                  <label htmlFor="final_deal">Final agreed price ($, leave blank if no deal)</label>
+                  <label htmlFor="final_deal">
+                    Final agreed price ({state.currency}, leave blank if no deal)
+                  </label>
                   <input
                     id="final_deal"
                     type="number"
@@ -215,7 +227,7 @@ export default function SessionView({
           </div>
           <p className="small muted">
             {endSummary.deal_closed
-              ? `Deal saved at ${fmtMoney(endSummary.final_deal)} for client "${endSummary.client_id}".`
+              ? `Deal saved at ${fmtMoney(endSummary.final_deal, state.currency)} for client "${endSummary.client_id}".`
               : `No deal reached. Outcome saved for client "${endSummary.client_id}".`}
           </p>
         </div>

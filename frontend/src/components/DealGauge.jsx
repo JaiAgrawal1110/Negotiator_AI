@@ -1,9 +1,12 @@
-function fmtMoney(n) {
+const LOCALE_BY_SYMBOL = { "$": "en-US", "₹": "en-IN" };
+
+function fmtMoney(n, symbol = "$") {
   if (n === null || n === undefined) return "—";
-  return `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  const locale = LOCALE_BY_SYMBOL[symbol] || "en-US";
+  return `${symbol}${Number(n).toLocaleString(locale, { maximumFractionDigits: 0 })}`;
 }
 
-export default function DealGauge({ floor, target, currentOffer }) {
+export default function DealGauge({ floor, target, currentOffer, currency = "$" }) {
   const range = Math.max(target - floor, 1e-6);
   const raw = (currentOffer - floor) / range;
   const clamped = Math.min(Math.max(raw, 0), 1);
@@ -19,14 +22,14 @@ export default function DealGauge({ floor, target, currentOffer }) {
   return (
     <div className="gauge-wrap">
       <div className="gauge-labels">
-        <span className="gauge-label-floor">FLOOR · {fmtMoney(floor)}</span>
-        <span className="gauge-label-target">TARGET · {fmtMoney(target)}</span>
+        <span className="gauge-label-floor">FLOOR · {fmtMoney(floor, currency)}</span>
+        <span className="gauge-label-target">TARGET · {fmtMoney(target, currency)}</span>
       </div>
       <div className="gauge-track">
         <div className="gauge-fill" style={{ width: `${pct}%` }} />
         <div className={markerClass} style={{ left: `${pct}%` }} />
       </div>
-      <div className="gauge-current">{fmtMoney(currentOffer)}</div>
+      <div className="gauge-current">{fmtMoney(currentOffer, currency)}</div>
       <div className="gauge-current-caption">
         {aboveTarget
           ? "above target"
