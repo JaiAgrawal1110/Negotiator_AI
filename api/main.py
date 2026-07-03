@@ -40,9 +40,10 @@ import os
 import uuid
 from dataclasses import dataclass, field
 from typing import Optional
- 
+
 from dotenv import load_dotenv
 load_dotenv()
+
 import numpy as np
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -70,7 +71,12 @@ app = FastAPI(title="Negotiator API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    # Vite picks the next free port if its default is taken (5173, 5174,
+    # 5175...), so pin this to a regex covering any localhost/127.0.0.1
+    # port rather than an exact list -- avoids CORS breaking every time
+    # a stray dev server is already holding 5173. Scoped to localhost
+    # only; tighten this to a real origin before deploying anywhere else.
+    allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
