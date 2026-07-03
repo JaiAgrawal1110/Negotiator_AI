@@ -299,11 +299,44 @@ class NegotiationEnv(gym.Env):
         Rule-based client counter-move, encoding each archetype's
         win/walk conditions from archetypes.py.
         Returns: (new_client_offer, deal_closed, client_walked, relationship_delta)
+
+        FIX (post Week 9-10 bugfix, found via real client-memory testing):
+        Previously, `concede_partial` returned deal_closed=False
+        UNCONDITIONALLY in every archetype branch — it could only ever nudge
+        the price and (in most branches) quietly erode relationship_score.
+        That meant any episode where the agent leaned on concede_partial
+        repeatedly was structurally guaranteed to run out the clock and get
+        force-settled via truncation, never a genuine accepted deal.
+
+        Each archetype now has an explicit concede_partial branch with its
+        own closing probability, chosen to be thematically consistent with
+        how that archetype already responds to firm vs. soft moves:
+
+          lowballer          ~30%  -- conceding hands them exactly what
+                                       they were pushing for.
+          ghoster            ~20%  -- still requires turns_taken >= 2
+                                       (mirrors their existing "goes quiet
+                                       early" behavior with firm_actions);
+                                       a concession is one of the few things
+                                       that can coax a response at all.
+          friendly_crusher   ~35-40% -- collaborative archetype, responds
+                                       well to accommodating moves.
+          deadline_rusher    ~35%  -- concession moves things toward
+                                       resolution faster, which they value.
+          scope_creeper      ~35-40% -- conceding on price plays directly
+                                       into "more for less"; high accept
+                                       rate, but keep the relationship hit
+                                       for anything that doesn't close.
+
+        NOTE: this changes the environment's transition dynamics. The
+        existing trained PPO policy was optimized against the OLD (broken)
+        dynamics, where it correctly learned "concede_partial is a dead
+        end, avoid it." That's no longer true post-fix, so the policy
+        should be retrained to make full use of the new closure paths.
         """
         rng = self._rng
         gap = freelancer_offer - self.current_offer
         firm_actions = {"hold_and_reframe", "set_boundary", "re_anchor_higher"}
-        soft_actions = {"concede_partial"}
 
         if self.archetype == "lowballer":
             if action_name in firm_actions:
@@ -311,12 +344,19 @@ class NegotiationEnv(gym.Env):
                 if rng.random() < 0.2:
                     return new_offer, True, False, 0.02
                 return new_offer, False, False, 0.0
-            if action_name in soft_actions:
+            if action_name == "concede_partial":
                 new_offer = self.current_offer - abs(gap) * 0.2
-                return max(new_offer, self.floor * 0.8), False, False, -0.05
+                new_offer = max(new_offer, self.floor * 0.8)
+                if rng.random() < 0.30:
+                    return freelancer_offer, True, False, 0.03
+                return new_offer, False, False, -0.05
             return self.current_offer, False, False, 0.0
 
         if self.archetype == "ghoster":
+            if action_name == "concede_partial":
+                if self.turns_taken >= 2 and rng.random() < 0.20:
+                    return freelancer_offer, True, False, 0.03
+                return self.current_offer, False, rng.random() < 0.1, -0.02
             if self.turns_taken >= 2 and action_name in firm_actions and rng.random() < 0.4:
                 new_offer = self.current_offer + gap * 0.6
                 return new_offer, rng.random() < 0.3, False, 0.05
@@ -329,6 +369,12 @@ class NegotiationEnv(gym.Env):
                 return self.current_offer + gap * 0.7, False, False, 0.02
             if action_name == "add_value":
                 return self.current_offer, rng.random() < 0.3, False, 0.05
+            if action_name == "concede_partial":
+                new_offer = self.current_offer - abs(gap) * 0.15
+                new_offer = max(new_offer, self.floor)
+                if rng.random() < 0.38:
+                    return freelancer_offer, True, False, 0.05
+                return new_offer, False, False, -0.02
             new_offer = self.current_offer - abs(gap) * 0.15
             return max(new_offer, self.floor), False, False, -0.02
 
@@ -336,6 +382,11 @@ class NegotiationEnv(gym.Env):
             if action_name in firm_actions or action_name == "add_value":
                 new_offer = self.current_offer + gap * rng.uniform(0.6, 0.9)
                 return new_offer, rng.random() < 0.45, False, 0.03
+            if action_name == "concede_partial":
+                new_offer = self.current_offer - abs(gap) * 0.1
+                if rng.random() < 0.35:
+                    return freelancer_offer, True, False, 0.04
+                return new_offer, False, False, 0.0
             new_offer = self.current_offer - abs(gap) * 0.1
             return new_offer, False, False, 0.0
 
@@ -345,6 +396,10 @@ class NegotiationEnv(gym.Env):
             if action_name in {"hold_and_reframe", "re_anchor_higher"}:
                 new_offer = self.current_offer + gap * 0.5
                 return new_offer, rng.random() < 0.25, False, 0.0
+            if action_name == "concede_partial":
+                if rng.random() < 0.38:
+                    return freelancer_offer, True, False, 0.03
+                return self.current_offer, False, False, -0.04
             return self.current_offer, False, False, -0.04
 
         return self.current_offer, False, False, 0.0
