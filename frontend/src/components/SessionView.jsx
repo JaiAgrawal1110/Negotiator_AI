@@ -143,7 +143,7 @@ export default function SessionView({
         ))}
       </div>
 
-      {!ended && (
+      {!state.done && (
         <div className="panel">
           <div className="panel-title">
             <span className="eyebrow">04</span> Log client's next move
@@ -191,32 +191,39 @@ export default function SessionView({
               {stepLoading ? "Thinking…" : "Get next script"}
             </button>
           </form>
+        </div>
+      )}
 
-          <div style={{ marginTop: 18, paddingTop: 18, borderTop: "1px solid var(--border-soft)" }}>
-            {!showEndForm ? (
-              <button className="btn btn-danger btn-block" onClick={() => setShowEndForm(true)}>
-                End negotiation
+      {!endSummary && (
+        <div className="panel">
+          {state.done && (
+            <p className="small muted" style={{ marginTop: 0, marginBottom: 16 }}>
+              Max turns reached — log the outcome below to save it to memory.
+            </p>
+          )}
+          {!showEndForm ? (
+            <button className="btn btn-danger btn-block" onClick={() => setShowEndForm(true)}>
+              End negotiation
+            </button>
+          ) : (
+            <form onSubmit={submitEnd}>
+              <div className="field">
+                <label htmlFor="final_deal">
+                  Final agreed price ({state.currency}, leave blank if no deal)
+                </label>
+                <input
+                  id="final_deal"
+                  type="number"
+                  value={finalDeal}
+                  onChange={(e) => setFinalDeal(e.target.value)}
+                  placeholder="2100"
+                />
+              </div>
+              <button className="btn btn-danger btn-block" type="submit">
+                Confirm & save to memory
               </button>
-            ) : (
-              <form onSubmit={submitEnd}>
-                <div className="field">
-                  <label htmlFor="final_deal">
-                    Final agreed price ({state.currency}, leave blank if no deal)
-                  </label>
-                  <input
-                    id="final_deal"
-                    type="number"
-                    value={finalDeal}
-                    onChange={(e) => setFinalDeal(e.target.value)}
-                    placeholder="2100"
-                  />
-                </div>
-                <button className="btn btn-danger btn-block" type="submit">
-                  Confirm & save to memory
-                </button>
-              </form>
-            )}
-          </div>
+            </form>
+          )}
         </div>
       )}
 
