@@ -1,3 +1,4 @@
+# --- from your original list ---
 gymnasium
 stable-baselines3
 numpy
@@ -11,6 +12,20 @@ scikit-learn
 torch
 chromadb
 fastapi
-uvicorn
+uvicorn[standard]
 pydantic
 python-dotenv
+
+# --- confirmed missing: found real imports for these in files you shared ---
+pandas          # scripts/demo_negotiation.py reads market_rag_chunks.csv via pd.read_csv
+accelerate      # transformers' Trainer (nlp/sentiment.py) requires this to be installed
+                # separately as of recent transformers versions -- it'll crash with
+                # "requires `accelerate`" at train time otherwise, even for CPU-only
+
+# --- probable, NOT confirmed: I haven't seen llm/market_retriever.py or agent/train.py,
+# so these are inferred from what "chromadb + langchain for market RAG" usually needs.
+# Verify against those two files' actual imports before trusting this blindly:
+langchain-community   # modern langchain split embeddings/vectorstore integrations
+                       # (e.g. Chroma wrapper) out of langchain-core into this package
+sentence-transformers  # common local-embedding choice for a Chroma-backed RAG pipeline
+                        # when not calling an embeddings API

@@ -1,0 +1,31 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env   # must contain GROQ_API_KEY -- not baked into the image, injected at run time
+    volumes:
+      # Persist memory + the trained policy across container rebuilds --
+      # without these, `docker compose up --build` wipes client history
+      # and you'd have to re-copy the model into the image every time.
+      - ./memory:/app/memory
+      - ./agent/policy:/app/agent/policy
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Browser-reachable URL, not the compose service name -- see the
+        # note in frontend/Dockerfile for why "http://api:8000" would be
+        # wrong here even though these two containers share a network.
+        VITE_API_URL: http://localhost:8000
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+    restart: unless-stopped
