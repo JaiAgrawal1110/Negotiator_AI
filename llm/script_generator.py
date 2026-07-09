@@ -1,20 +1,6 @@
 """
 llm/script_generator.py
 Week 7-8 — LLM Script Generation
-
-This is the layer that makes the agent "visibly useful": it takes the
-abstract action the RL policy picked (0-5) plus the current deal state,
-client archetype, and detected sentiment/tone, and turns it into an
-actual message text a freelancer could copy-paste and send.
-
-Pipeline position:
-    RL policy (agent/) --> action_id --------\
-    NLP sentiment (nlp/) --> tone signal ------> ScriptGenerator --> reply text(s)
-    Archetype classifier (nlp/) --> archetype -/
-    NegotiationEnv state --> price/turn context /
-
-Uses the same Groq client pattern as llm/simulator.py and nlp/classifier.py
-(model swapped to llama-3.3-70b-versatile after the 3.1 decommission).
 """
 
 import os
@@ -30,13 +16,6 @@ from llm.market_retriever import MarketRateRetriever
 
 GROQ_MODEL = "llama-3.3-70b-versatile"
 
-# Common glued-word patterns seen from Groq/Llama output where a space gets
-# dropped at a word boundary (e.g. "Let'sexplore" -> "Let's explore",
-# "withthe" -> "with the", "valueit" -> "value it"). Two shapes handled:
-#   1) a contraction glued directly to the next word ("it'sbest")
-#   2) a content word glued directly to a short function word ("valueit")
-# Conservative on purpose — the function-word list is short, so it won't
-# split legitimate longer words that happen to end in one of these letters.
 _CONTRACTION_GLUE = re.compile(
     r"\b(Let's|let's|It's|it's|That's|that's|I'm|I've|I'll|You're|you're)([a-z])"
 )
@@ -50,11 +29,6 @@ _WORD_GLUE = re.compile(
 
 
 def _fix_glued_words(text: str) -> str:
-    """Best-effort cleanup for missing-space artifacts. Not a substitute for
-    the prompt instruction — a second layer of defense, since the model
-    doesn't reliably self-catch this in generation. The prefix/suffix lists
-    are small on purpose; extend them if new glue patterns show up in
-    testing rather than trying to catch every case up front."""
     text = _CONTRACTION_GLUE.sub(r"\1 \2", text)
     text = _WORD_GLUE.sub(r"\1 \2", text)
     return text
@@ -62,29 +36,21 @@ def _fix_glued_words(text: str) -> str:
 
 @dataclass
 class DealContext:
-    """Snapshot of the negotiation at the current turn. Mirrors the fields
-    already tracked in env/negotiation_env.py's state vector — pull these
-    straight from env.state / env.info when wiring this into a live episode."""
-
     freelancer_floor: float
     freelancer_target: float
-    current_offer: float          # client's latest number on the table
+    current_offer: float
     turn_number: int
     turns_remaining: int
-    archetype: str                # one of: Lowballer, Ghoster, Friendly Crusher,
-                                   # Deadline Rusher, Scope Creeper
-    client_last_message: str      # what the client just said (for grounding tone)
-    detected_sentiment: Optional[str] = None   # from nlp/sentiment.py, e.g. "aggressive"
+    archetype: str
+    client_last_message: str
+    detected_sentiment: Optional[str] = None
     project_description: str = "a freelance project"
     currency: str = "$"
-    extra_notes: str = field(default_factory=str)  # e.g. "3rd counter-offer this thread"
-    client_history: Optional[dict] = None  # from memory/negotiation_memory.py,
-                                            # None for a new client with no history
+    extra_notes: str = field(default_factory=str)
+    client_history: Optional[dict] = None
 
 
 class ScriptGenerator:
-    """Wraps Groq to turn (action_id, DealContext) into freelancer reply scripts."""
-
     def __init__(
         self,
         api_key: Optional[str] = None,
@@ -94,10 +60,6 @@ class ScriptGenerator:
         self.client = Groq(api_key=api_key or os.environ.get("GROQ_API_KEY"))
         self.model = model
 
-        # Market retrieval is a nice-to-have, not a hard dependency -- if
-        # the vector store hasn't been built yet (scripts/build_vector_store.py
-        # not run), fall back to generating without market grounding rather
-        # than crashing the whole script generator over it.
         self.retriever = None
         if use_market_context:
             try:
@@ -107,40 +69,16 @@ class ScriptGenerator:
                       f"Continuing without market-rate grounding.")
 
     def _suggest_anchor_number(self, action_id: int, ctx: DealContext) -> Optional[float]:
-        """Computes the actual number the script should state, where the
-        strategy calls for one. Numbers are decided deterministically here —
-        the LLM's job is to phrase them, not invent them. This is the same
-        split used elsewhere in the project: rule-based logic drives numbers,
-        the LLM drives text/tone only.
-
-        Returns None when the strategy shouldn't assert a new number at all
-        (e.g. Hold and Reframe usually just references the existing offer).
-        """
-        if action_id == 1:  # Re-anchor Higher — push toward the real target,
-            # not a midpoint. Leave a small amount of room to negotiate
-            # further rather than opening at the exact ceiling.
+        if action_id == 1:
             return round(ctx.freelancer_target * 0.96 / 25) * 25
 
-        if action_id == 2:  # Concede Partially — move from target toward
-            # the client's offer, but only partway (60% of the way from
-            # target to their offer, biased to still favor the freelancer).
+        if action_id == 2:
             anchor = ctx.freelancer_target - 0.4 * (ctx.freelancer_target - ctx.current_offer)
             return round(anchor / 25) * 25
 
-        # Actions 0 (Hold), 3 (Add Value), 4 (Boundary), 5 (Walk) reference
-        # the existing current_offer rather than asserting a new number —
-        # already working correctly in testing, no override needed.
         return None
 
     def _get_market_context(self, ctx: DealContext) -> Optional[dict]:
-        """Retrieves real market-rate data semantically matched to this
-        project, for use as grounding evidence in the script (e.g. "market
-        rate for this kind of work is $44-$56/hr"). This never overrides
-        freelancer_floor/target or the deterministic suggested_number --
-        those are the freelancer's own negotiation boundaries, decided by
-        the RL policy and env, not by what the market happens to average.
-        Retrieval only makes the LLM's justification credible instead of
-        invented ("industry standards" with nothing behind it)."""
         if self.retriever is None:
             return None
         try:
@@ -149,9 +87,6 @@ class ScriptGenerator:
             print(f"⚠️  Market retrieval failed for this turn ({e}). Continuing without it.")
             return None
 
-    # ------------------------------------------------------------------
-    # Prompt construction
-    # ------------------------------------------------------------------
     def _build_system_prompt(self) -> str:
         return (
             "You are a negotiation coach writing reply scripts on behalf of a "
@@ -165,6 +100,17 @@ class ScriptGenerator:
             "- Keep it short. 2-5 sentences unless the strategy explicitly needs more.\n"
             "- Never reveal you are following a 'strategy' or mention negotiation "
             "tactics by name.\n"
+            "- CURRENCY: every number you state MUST use the exact currency "
+            "symbol already present in freelancer_floor, freelancer_target, "
+            "client_current_offer, or suggested_number as given to you (e.g. "
+            "if you're given '₹99999', you say ₹99999 -- never $, never £, "
+            "never any symbol other than the one already in the value). Do "
+            "not convert to a different currency, do not substitute a symbol "
+            "you find more familiar, and do not add or drop a symbol. This "
+            "applies even if retrieved_market_data or your own phrasing "
+            "would naturally read better in a different currency -- it "
+            "would not, the client is quoting in the currency they were "
+            "given and a switched symbol reads as a translation error.\n"
             "- If deal_context includes a 'suggested_number' field, you MUST use "
             "that exact number (rounding to the nearest 25 is fine) as the price "
             "you state. Do not substitute a different number, do not split the "
@@ -261,36 +207,90 @@ class ScriptGenerator:
         })
 
     # ------------------------------------------------------------------
-    # Public API
+    # Numeric safety guard
     # ------------------------------------------------------------------
+    def _allowed_numbers(self, action_id: int, ctx: DealContext) -> set:
+        """The only numeric values the model is allowed to state, given
+        this turn's action. Mirrors the system prompt's rules in code --
+        prompt instructions alone weren't reliable enough (see: a real
+        ₹99,999 hallucinated on an add_value turn with target ₹20,000).
+        Floor/target are deliberately excluded: those are the freelancer's
+        own boundaries, never numbers to state directly."""
+        allowed = {round(ctx.current_offer, 2)}
+        suggested = self._suggest_anchor_number(action_id, ctx)
+        if suggested is not None:
+            allowed.add(round(suggested, 2))
+        return allowed
+
+    def _find_violating_numbers(self, text: str, allowed: set, currency: str, tolerance: float = 1.0):
+        """Extracts every currency-prefixed number in the generated text
+        and returns any that don't match an allowed value within a small
+        rounding tolerance. A non-empty result means the model stated a
+        price nobody gave it."""
+        pattern = re.escape(currency) + r"([\d,]+(?:\.\d+)?)"
+        found = []
+        for match in re.finditer(pattern, text):
+            raw = match.group(1).replace(",", "")
+            try:
+                value = float(raw)
+            except ValueError:
+                continue
+            if not any(abs(value - a) <= tolerance for a in allowed):
+                found.append(value)
+        return found
+
     def generate(self, action_id: int, ctx: DealContext, n_variants: int = 2) -> list[str]:
         """Returns a list of `n_variants` ready-to-send reply strings for the
-        given action_id + deal context."""
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": self._build_system_prompt()},
-                {"role": "user", "content": self._build_user_prompt(action_id, ctx, n_variants)},
-            ],
-            temperature=0.8,
-            response_format={"type": "json_object"},
+        given action_id + deal context. Validates every returned script
+        against the numbers it was actually allowed to state, retrying on
+        a hallucinated price rather than silently handing a freelancer a
+        number nobody computed."""
+        allowed = self._allowed_numbers(action_id, ctx)
+        max_attempts = 3
+        last_violations = {}
+
+        for attempt in range(1, max_attempts + 1):
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": self._build_system_prompt()},
+                    {"role": "user", "content": self._build_user_prompt(action_id, ctx, n_variants)},
+                ],
+                temperature=0.8,
+                response_format={"type": "json_object"},
+            )
+
+            raw = response.choices[0].message.content
+            try:
+                parsed = json.loads(raw)
+                scripts = [_fix_glued_words(s["variant"]) for s in parsed["scripts"]]
+            except (json.JSONDecodeError, KeyError, TypeError) as e:
+                raise RuntimeError(
+                    f"Script generator got malformed JSON from Groq: {raw!r}"
+                ) from e
+
+            if not scripts:
+                raise RuntimeError("Script generator returned zero scripts.")
+
+            last_violations = {}
+            for s in scripts:
+                violations = self._find_violating_numbers(s, allowed, ctx.currency)
+                if violations:
+                    last_violations[s] = violations
+
+            if not last_violations:
+                return scripts
+
+            print(f"⚠️  Script generator attempt {attempt}/{max_attempts} stated "
+                  f"unauthorized number(s) {last_violations} (allowed: {allowed}). "
+                  f"{'Retrying...' if attempt < max_attempts else 'Out of retries.'}")
+
+        raise RuntimeError(
+            f"Script generator repeatedly stated numbers it wasn't given "
+            f"({last_violations}) after {max_attempts} attempts. Allowed "
+            f"values were {allowed}. Refusing to return an unverified script "
+            f"rather than risk sending a freelancer a hallucinated price."
         )
 
-        raw = response.choices[0].message.content
-        try:
-            parsed = json.loads(raw)
-            scripts = [_fix_glued_words(s["variant"]) for s in parsed["scripts"]]
-        except (json.JSONDecodeError, KeyError, TypeError) as e:
-            raise RuntimeError(
-                f"Script generator got malformed JSON from Groq: {raw!r}"
-            ) from e
-
-        if not scripts:
-            raise RuntimeError("Script generator returned zero scripts.")
-
-        return scripts
-
     def generate_single(self, action_id: int, ctx: DealContext) -> str:
-        """Convenience wrapper for when you only need one script (e.g. wired
-        into an automated pipeline rather than shown to the user as choices)."""
         return self.generate(action_id, ctx, n_variants=1)[0]

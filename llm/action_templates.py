@@ -16,11 +16,17 @@ ACTION_STRATEGIES = {
         "name": "Hold and Reframe",
         "goal": (
             "Do not move on price. Reframe the conversation around value, "
-            "scope, or outcomes instead of haggling over the number directly."
+            "scope, or outcomes instead of haggling over the number directly. "
+            "If the client's offer is far below your floor or market rate, one "
+            "valid reframe is asking what's behind the number -- e.g. whether "
+            "they're comparing you to a much cheaper quote, or working with a "
+            "budget you don't know about yet. Use this to understand their "
+            "position, not as a lead-in to lowering your own number."
         ),
         "tone_guidance": (
             "Calm, confident, non-defensive. Acknowledge what the client said, "
-            "then pivot to value/outcomes. No apologizing for the price."
+            "then pivot to value/outcomes -- or, when appropriate, a genuine "
+            "question about their number. No apologizing for the price."
         ),
         "avoid": "Don't concede anything. Don't repeat the same justification twice.",
     },
@@ -65,13 +71,24 @@ ACTION_STRATEGIES = {
         "goal": (
             "Clearly decline the client's ask (price, scope, deadline, or terms) "
             "without leaving room for further pressure, while keeping the door open "
-            "for them to come back with something workable."
+            "for them to come back with something workable. If their offer is "
+            "significantly below your floor or market rate with no stated reason, "
+            "you may directly ask what's driving a number that low -- e.g. whether "
+            "they've received a lower quote elsewhere, or what budget they're "
+            "actually working with. This isn't an apology or an opening to "
+            "negotiate down; it puts the burden of justifying the number back on "
+            "them, and the answer may be useful information for the next turn."
         ),
         "tone_guidance": (
             "Direct, respectful, unemotional. Short sentences. No hedging language "
-            "like 'maybe' or 'I guess'."
+            "like 'maybe' or 'I guess'. If asking why the offer is so low, ask it "
+            "plainly and briefly -- one question, not an interrogation."
         ),
-        "avoid": "Don't soften it into a maybe. Don't over-justify — one reason is enough.",
+        "avoid": (
+            "Don't soften it into a maybe. Don't over-justify — one reason is enough. "
+            "If you ask why the offer is low, don't follow it with a concession in "
+            "the same message -- that undercuts the question entirely."
+        ),
     },
     5: {
         "name": "Walk Away / End Negotiation",

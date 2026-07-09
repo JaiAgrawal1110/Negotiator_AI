@@ -1,4 +1,12 @@
-node_modules/
-dist/
+@"
+venv/
+__pycache__/
+*.pyc
 .git/
+.gitignore
+frontend/
+node_modules/
+memory/*.db
+.env
 *.log
+"@ | Set-Content .dockerignore
