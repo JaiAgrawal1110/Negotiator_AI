@@ -1,5 +1,7 @@
 # NegotiateAI — Freelancer Negotiation Agent
 
+**🚀 Live Demo:** Frontend — [http://15.134.143.152:3000](http://15.134.143.152:3000) · Backend API docs — [http://15.134.143.152:8000/docs](http://15.134.143.152:8000/docs)
+
 Say you're a freelance web developer. A client offers you ₹20,000 for a
 month-long Shopify build — product uploads, image generation, the works.
 You know that's low, but low compared to what, exactly? You don't have a
@@ -79,7 +81,7 @@ client history (SQLite) ┴─────────────────�
 | Memory | SQLite, per-client |
 | Backend | FastAPI |
 | Frontend | React + Vite, plain CSS (no framework) |
-| Deployment | Docker Compose (FastAPI + nginx-served static build) |
+| Deployment | Docker Compose (FastAPI + nginx-served static build) on AWS EC2 |
 
 ## Running it
 
@@ -145,6 +147,20 @@ episode where the agent leaned on that move was structurally guaranteed to
 run out the clock. Fixed by giving each archetype a real, tuned chance to
 accept when you concede (higher for archetypes like Lowballer and Scope
 Creeper, lower for Ghoster), instead of zero across the board.
+
+**Deployment (AWS EC2) turned into its own debugging arc.** The wrong AMI
+variant (Ubuntu bundled with SQL Server) silently blocked the launch on
+smaller instance types. The root Dockerfile — meant to build the Python
+backend — had accidentally been duplicated from `frontend/Dockerfile`,
+so it was trying to `COPY nginx.conf` and run `npm` commands instead of
+`pip install`. The EBS volume's filesystem never auto-grew to match the
+size set at launch, and once fixed, Docker's own build cache from earlier
+failed attempts quietly ate through most of the free space again. Building
+both services in parallel also briefly doubled peak disk usage during the
+final build. Fixed by writing a correct Python-based Dockerfile for the
+backend, growing the partition manually with `growpart`/`resize2fs`,
+pruning Docker's build cache, and building each service sequentially
+instead of in parallel.
 
 ---
 
