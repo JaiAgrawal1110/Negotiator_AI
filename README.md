@@ -1,6 +1,5 @@
 # NegotiateAI — Freelancer Negotiation Agent
 
-**🚀 Live Demo:** Backend API docs — [http://15.134.143.152:8000/docs](http://15.134.143.152:8000/docs)
 
 Say you're a freelance web developer. A client offers you ₹20,000 for a
 month-long Shopify build — product uploads, image generation, the works.
